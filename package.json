@@ -1,0 +1,17 @@
+{
+  "name": "asana_receiver",
+  "version": "1.0.0",
+  "description": "Simple webhook receiver for Asana",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["asana", "webhook", "receiver"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
+
