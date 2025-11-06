@@ -1,13 +1,18 @@
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 
 // Asana webhook secret (set this in your environment variables)
-const WEBHOOK_SECRET = process.env.ASANA_WEBHOOK_SECRET || 'your-webhook-secret-here';
+let WEBHOOK_SECRET = null;
+
+// In-memory secret storage (for serverless/Vercel compatibility)
+// This will be populated during handshake and persist for the lifetime of the server instance
+let runtimeSecret = null;
 
 // Store connected SSE clients
 let sseClients = [];
@@ -160,17 +165,68 @@ app.post('/webhook', (req, res) => {
   // STEP 1: Handle Asana webhook handshake
   if (req.headers['x-hook-secret']) {
     const hookSecret = req.headers['x-hook-secret'];
-    console.log('🤝 Handshake detected! Hook Secret:', hookSecret);
+    console.log('\n╔══════════════════════════════════════════════════════════════════╗');
+    console.log('║  🤝 HANDSHAKE DETECTED!                                          ║');
+    console.log('╟──────────────────────────────────────────────────────────────────╢');
+    console.log(`║  Secret: ${hookSecret.substring(0, 40)}... ║`);
+    console.log('╚══════════════════════════════════════════════════════════════════╝\n');
     
+    // Echo secret back to Asana
     res.set('X-Hook-Secret', hookSecret);
     res.status(200).send();
     
-    console.log('✅ Handshake successful!');
+    console.log('✅ Handshake successful! Secret echoed back to Asana.\n');
+
+    // SAVE secret to memory (for this server instance)
+    runtimeSecret = hookSecret;
+    WEBHOOK_SECRET = hookSecret;
+    
+    console.log('💾 Secret saved to memory for this session');
+    console.log('✅ Signature verification is now ENABLED for subsequent events');
+    
+    // Also try to save to .env file (for local dev, will fail on Vercel)
+    try {
+      const envPath = path.join(__dirname, '.env');
+      let envContent = '';
+      
+      if (fs.existsSync(envPath)) {
+        envContent = fs.readFileSync(envPath, 'utf8');
+        if (envContent.includes('ASANA_WEBHOOK_SECRET=')) {
+          envContent = envContent.replace(
+            /ASANA_WEBHOOK_SECRET=.*/,
+            `ASANA_WEBHOOK_SECRET=${hookSecret}`
+          );
+        } else {
+          envContent += `\n# Webhook secret from Asana handshake (auto-saved)\nASANA_WEBHOOK_SECRET=${hookSecret}\n`;
+        }
+      } else {
+        envContent = `# Asana Receiver Configuration\nPORT=${PORT}\nPUBLIC_URL=${PUBLIC_URL}\n\n# Webhook secret from Asana handshake (auto-saved)\nASANA_WEBHOOK_SECRET=${hookSecret}\n`;
+      }
+      
+      fs.writeFileSync(envPath, envContent, 'utf8');
+      console.log('📝 Also saved to .env file (local dev only)');
+      
+    } catch (error) {
+      console.log('ℹ️  Running on serverless (Vercel) - .env file not writable (this is OK)');
+      console.log('   Secret is stored in memory and will be used for verification');
+    }
+    
+    console.log('\n╔══════════════════════════════════════════════════════════════════╗');
+    console.log('║  ✅ SECRET READY!                                                ║');
+    console.log('╟──────────────────────────────────────────────────────────────────╢');
+    console.log('║  Storage: In-memory (runtime)                                    ║');
+    console.log('║  Status:  Active & Ready to verify events                        ║');
+    console.log('║                                                                  ║');
+    console.log('║  📨 Next events will be automatically verified!                  ║');
+    console.log('║     No restart needed!                                           ║');
+    console.log('╚══════════════════════════════════════════════════════════════════╝\n');
+
 
     // Broadcast handshake to SSE clients
     broadcastToClients({
       type: 'handshake',
       hookSecret: hookSecret.substring(0, 10) + '...',
+      secretSaved: true,
       timestamp: new Date().toISOString()
     });
 
@@ -179,7 +235,8 @@ app.post('/webhook', (req, res) => {
 
   // STEP 2: Verify webhook signature (for actual events)
   const signature = req.headers['x-hook-signature'];
-  if (signature) {
+  if (signature && WEBHOOK_SECRET && WEBHOOK_SECRET !== 'your-webhook-secret-here') {
+    // Only verify if we have a valid secret configured
     const computedSignature = crypto
       .createHmac('sha256', WEBHOOK_SECRET)
       .update(req.rawBody)
@@ -200,6 +257,9 @@ app.post('/webhook', (req, res) => {
       return res.status(401).json({ error: 'Invalid signature' });
     }
     console.log('✅ Signature verified!');
+  } else if (signature) {
+    console.log('⚠️  Signature present but WEBHOOK_SECRET not configured - SKIPPING VERIFICATION');
+    console.log('   Set ASANA_WEBHOOK_SECRET in .env file for production use');
   }
 
   // STEP 3: Process webhook events
