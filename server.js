@@ -1,14 +1,16 @@
+require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
+const db = require('./db');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3500;
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 
 // Asana webhook secret (set this in your environment variables)
-let WEBHOOK_SECRET = null;
+let WEBHOOK_SECRET = process.env.ASANA_WEBHOOK_SECRET || null;
 
 // In-memory secret storage (for serverless/Vercel compatibility)
 // This will be populated during handshake and persist for the lifetime of the server instance
@@ -129,7 +131,7 @@ app.get('/events', (req, res) => {
   });
 });
 
-// Get event history
+// Get event history (in-memory)
 app.get('/api/events/history', (req, res) => {
   res.json({
     success: true,
@@ -138,7 +140,88 @@ app.get('/api/events/history', (req, res) => {
   });
 });
 
-// Clear event history
+// Get events from database
+app.get('/api/events/database', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    
+    const events = await db.getRecentEvents(limit, offset);
+    
+    res.json({
+      success: true,
+      events: events,
+      count: events.length,
+      limit: limit,
+      offset: offset
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get webhooks from database
+app.get('/api/webhooks', async (req, res) => {
+  try {
+    const webhooks = await db.getAllWebhooks();
+    
+    res.json({
+      success: true,
+      webhooks: webhooks,
+      count: webhooks.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get database statistics
+app.get('/api/database/stats', async (req, res) => {
+  try {
+    const stats = await db.getDatabaseStats();
+    const eventStats = await db.getEventStats();
+    
+    res.json({
+      success: true,
+      stats: {
+        ...stats,
+        ...eventStats
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Test database connection
+app.get('/api/database/test', async (req, res) => {
+  try {
+    const result = await db.testConnection();
+    
+    res.json({
+      success: result.success,
+      message: result.success ? 'Database connection successful' : 'Database connection failed',
+      time: result.time,
+      error: result.error
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Clear event history (in-memory only)
 app.post('/api/events/clear', (req, res) => {
   const count = eventHistory.length;
   eventHistory.length = 0;
@@ -163,15 +246,15 @@ app.post('/webhook', (req, res) => {
   console.log('Body:', JSON.stringify(req.body, null, 2));
 
   // STEP 1: Handle Asana webhook handshake
-  if (req.headers['x-hook-secret']) {
-    const hookSecret = req.headers['x-hook-secret'];
+  if (req.headers['X-Hook-Secret']) {
+    const hookSecret = req.headers['X-Hook-Secret'];
     console.log('\n╔══════════════════════════════════════════════════════════════════╗');
     console.log('║  🤝 HANDSHAKE DETECTED!                                          ║');
     console.log('╟──────────────────────────────────────────────────────────────────╢');
     console.log(`║  Secret: ${hookSecret.substring(0, 40)}... ║`);
     console.log('╚══════════════════════════════════════════════════════════════════╝\n');
     
-    // Echo secret back to Asana
+    // Echo secret back to Asana FIRST (must respond quickly)
     res.set('X-Hook-Secret', hookSecret);
     res.status(200).send();
     
@@ -183,6 +266,35 @@ app.post('/webhook', (req, res) => {
     
     console.log('💾 Secret saved to memory for this session');
     console.log('✅ Signature verification is now ENABLED for subsequent events');
+    
+    // Save webhook info to PostgreSQL database
+    (async () => {
+      try {
+        // Extract webhook info from request body if available
+        const webhookGid = req.body.webhook_gid || `webhook_${Date.now()}`;
+        const resourceGid = req.body.resource || 'unknown';
+        const resourceType = req.body.resource_type || 'unknown';
+        const targetUrl = `${PUBLIC_URL}/webhook`;
+        
+        const dbResult = await db.saveWebhook({
+          webhook_gid: webhookGid,
+          resource_gid: resourceGid,
+          resource_type: resourceType,
+          target_url: targetUrl,
+          secret: hookSecret
+        });
+        
+        if (dbResult.success) {
+          console.log('💾 ✅ Webhook saved to PostgreSQL database');
+          console.log('   Webhook GID:', webhookGid);
+          console.log('   Resource GID:', resourceGid);
+        } else {
+          console.log('⚠️  Failed to save webhook to database:', dbResult.error);
+        }
+      } catch (error) {
+        console.error('❌ Database error during handshake:', error.message);
+      }
+    })();
     
     // Also try to save to .env file (for local dev, will fail on Vercel)
     try {
@@ -214,7 +326,7 @@ app.post('/webhook', (req, res) => {
     console.log('\n╔══════════════════════════════════════════════════════════════════╗');
     console.log('║  ✅ SECRET READY!                                                ║');
     console.log('╟──────────────────────────────────────────────────────────────────╢');
-    console.log('║  Storage: In-memory (runtime)                                    ║');
+    console.log('║  Storage: Memory + PostgreSQL + .env                             ║');
     console.log('║  Status:  Active & Ready to verify events                        ║');
     console.log('║                                                                  ║');
     console.log('║  📨 Next events will be automatically verified!                  ║');
@@ -227,6 +339,7 @@ app.post('/webhook', (req, res) => {
       type: 'handshake',
       hookSecret: hookSecret.substring(0, 10) + '...',
       secretSaved: true,
+      savedToDatabase: true,
       timestamp: new Date().toISOString()
     });
 
@@ -288,6 +401,7 @@ app.post('/webhook', (req, res) => {
   console.log(`📨 Received ${events.length} event(s)`);
 
   const processedEvents = [];
+  const signatureVerified = !!(signature && WEBHOOK_SECRET && WEBHOOK_SECRET !== 'your-webhook-secret-here');
 
   events.forEach((event, index) => {
     const eventData = {
@@ -318,12 +432,45 @@ app.post('/webhook', (req, res) => {
       eventHistory.pop();
     }
 
+    // Save to PostgreSQL database (async, non-blocking)
+    (async () => {
+      try {
+        const dbEventData = {
+          webhook_gid: event.parent?.gid || `webhook_${Date.now()}`,
+          event_type: event.type || 'webhook',
+          action: event.action,
+          resource_gid: event.resource?.gid,
+          resource_type: event.resource?.resource_type,
+          user_gid: event.user?.gid,
+          created_at: event.created_at || new Date().toISOString(),
+          payload: event,
+          signature_verified: signatureVerified
+        };
+        
+        const dbResult = await db.saveEvent(dbEventData);
+        
+        if (dbResult.success) {
+          console.log(`💾 Event ${index + 1} saved to database (ID: ${dbResult.data.id})`);
+          
+          // Update webhook stats
+          if (event.parent?.gid) {
+            await db.updateWebhookStats(event.parent.gid);
+          }
+        } else {
+          console.log(`⚠️  Failed to save event ${index + 1} to database:`, dbResult.error);
+        }
+      } catch (error) {
+        console.error(`❌ Database error for event ${index + 1}:`, error.message);
+      }
+    })();
+
     // Broadcast event to all connected SSE clients
     broadcastToClients({
       type: 'webhook_event',
       event: eventData,
       totalEvents: events.length,
-      currentIndex: index + 1
+      currentIndex: index + 1,
+      savedToDatabase: true
     });
   });
 
@@ -359,8 +506,8 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
+// Start server and test database connection
+app.listen(PORT, async () => {
   const webhookUrl = `${PUBLIC_URL}/webhook`;
   const dashboardUrl = PUBLIC_URL;
   const sseUrl = `${PUBLIC_URL}/events`;
@@ -373,7 +520,7 @@ app.listen(PORT, () => {
 ║  Local Server:  http://localhost:${PORT}                                  ║
 ║  Public URL:    ${PUBLIC_URL.padEnd(50)} ║
 ╟───────────────────────────────────────────────────────────────────────╢
-║  📋 COPY THESE URLs:                                                  ║
+║  📋 ENDPOINTS:                                                        ║
 ╟───────────────────────────────────────────────────────────────────────╢
 ║  🔗 Webhook Endpoint (for Asana):                                     ║
 ║     ${webhookUrl.padEnd(66)} ║
@@ -381,9 +528,47 @@ app.listen(PORT, () => {
 ║  🖥️  Dashboard (view events):                                         ║
 ║     ${dashboardUrl.padEnd(66)} ║
 ║                                                                       ║
-║  📡 SSE Stream (for integrations):                                    ║
+║  📡 SSE Stream (real-time events):                                    ║
 ║     ${sseUrl.padEnd(66)} ║
+║                                                                       ║
+║  🔍 API Endpoints:                                                    ║
+║     GET  /api/info              - Server info                         ║
+║     GET  /api/webhooks          - List webhooks (DB)                  ║
+║     GET  /api/events/database   - Events from DB                      ║
+║     GET  /api/events/history    - Events (in-memory)                  ║
+║     GET  /api/database/stats    - Database statistics                 ║
+║     GET  /api/database/test     - Test DB connection                  ║
 ╟───────────────────────────────────────────────────────────────────────╢`);
+
+  // Test database connection
+  console.log('║  💾 DATABASE STATUS:                                                  ║');
+  try {
+    const dbTest = await db.testConnection();
+    if (dbTest.success) {
+      console.log('║     ✅ PostgreSQL: Connected                                          ║');
+      console.log(`║     📊 Server Time: ${dbTest.time.toISOString().padEnd(42)} ║`);
+      
+      // Get database stats
+      try {
+        const stats = await db.getDatabaseStats();
+        if (stats) {
+          console.log(`║     📈 Active Webhooks: ${String(stats.active_webhooks).padEnd(39)} ║`);
+          console.log(`║     📈 Total Events: ${String(stats.total_events).padEnd(42)} ║`);
+          console.log(`║     📈 Events (24h): ${String(stats.events_24h).padEnd(42)} ║`);
+        }
+      } catch (e) {
+        console.log('║     ⚠️  Could not fetch stats (tables may not exist yet)            ║');
+      }
+    } else {
+      console.log('║     ❌ PostgreSQL: Connection failed                                  ║');
+      console.log(`║     Error: ${dbTest.error?.substring(0, 50).padEnd(50)} ║`);
+    }
+  } catch (error) {
+    console.log('║     ❌ PostgreSQL: Connection error                                   ║');
+    console.log(`║     ${error.message.substring(0, 60).padEnd(60)} ║`);
+  }
+  
+  console.log('╟───────────────────────────────────────────────────────────────────────╢');
 
   if (isLocal) {
     console.log(`║  ⚠️  WARNING: Using localhost URL                                     ║
@@ -417,8 +602,9 @@ app.listen(PORT, () => {
 ╟───────────────────────────────────────────────────────────────────────╢
 ║  💡 Quick Tips:                                                       ║
 ║     • Open dashboard in browser to see events in real-time            ║
-║     • Use integration site at localhost:3001/webhooks                 ║
-║     • Check /api/info endpoint for all URLs                           ║
+║     • Events are logged to console AND saved to PostgreSQL            ║
+║     • Use /api endpoints to query stored data                         ║
+║     • Check logs for detailed trace of handshake and events           ║
 ╚═══════════════════════════════════════════════════════════════════════╝
   `);
   
