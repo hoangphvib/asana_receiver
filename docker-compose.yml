@@ -6,7 +6,7 @@ services:
     container_name: asana_receiver_db
     restart: unless-stopped
     ports:
-      - "5435:5432"  # Custom port: 5433 trên host -> 5432 trong container
+      - "5435:5432"  # Custom port: 5435 trên host -> 5432 trong container
     environment:
       POSTGRES_DB: asana_receiver
       POSTGRES_USER: asana_admin
