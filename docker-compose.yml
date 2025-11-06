@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: asana_receiver_db
+    restart: unless-stopped
+    ports:
+      - "5435:5432"  # Custom port: 5433 trên host -> 5432 trong container
+    environment:
+      POSTGRES_DB: asana_receiver
+      POSTGRES_USER: asana_admin
+      POSTGRES_PASSWORD: asana_secure_pass_2024
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asana_admin -d asana_receiver"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+
