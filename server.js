@@ -235,31 +235,52 @@ app.post('/webhook', (req, res) => {
 
   // STEP 2: Verify webhook signature (for actual events)
   const signature = req.headers['x-hook-signature'];
+  
+  // DEBUG: Log verification state
+  console.log('\n🔍 SIGNATURE VERIFICATION DEBUG:');
+  console.log('   Has signature header?', !!signature);
+  console.log('   Has WEBHOOK_SECRET?', !!WEBHOOK_SECRET);
+  console.log('   WEBHOOK_SECRET value:', WEBHOOK_SECRET ? WEBHOOK_SECRET.substring(0, 20) + '...' : 'NONE');
+  console.log('   Will verify?', !!(signature && WEBHOOK_SECRET && WEBHOOK_SECRET !== 'your-webhook-secret-here'));
+  
   if (signature && WEBHOOK_SECRET && WEBHOOK_SECRET !== 'your-webhook-secret-here') {
     // Only verify if we have a valid secret configured
+    console.log('   Computing signature...');
+    console.log('   Raw body length:', req.rawBody ? req.rawBody.length : 'UNDEFINED');
+    console.log('   Raw body preview:', req.rawBody ? req.rawBody.substring(0, 100) : 'UNDEFINED');
+    
     const computedSignature = crypto
       .createHmac('sha256', WEBHOOK_SECRET)
       .update(req.rawBody)
       .digest('hex');
 
     if (computedSignature !== signature) {
-      console.log('❌ Invalid signature!');
-      console.log('Expected:', computedSignature);
-      console.log('Received:', signature);
+      console.log('\n❌ SIGNATURE MISMATCH!');
+      console.log('   Expected (computed):', computedSignature);
+      console.log('   Received (from Asana):', signature);
+      console.log('   Secret used:', WEBHOOK_SECRET.substring(0, 20) + '...');
+      console.log('   Body used:', req.rawBody ? req.rawBody.substring(0, 200) : 'UNDEFINED');
       
       // Broadcast error to SSE clients
       broadcastToClients({
         type: 'error',
         error: 'Invalid signature',
+        computed: computedSignature,
+        received: signature,
         timestamp: new Date().toISOString()
       });
 
-      return res.status(401).json({ error: 'Invalid signature' });
+      return res.status(401).json({ 
+        error: 'Invalid signature',
+        hint: 'Secret mismatch or body format incorrect'
+      });
     }
-    console.log('✅ Signature verified!');
+    console.log('   ✅ Signature verified!\n');
   } else if (signature) {
-    console.log('⚠️  Signature present but WEBHOOK_SECRET not configured - SKIPPING VERIFICATION');
-    console.log('   Set ASANA_WEBHOOK_SECRET in .env file for production use');
+    console.log('   ⚠️  SKIPPING VERIFICATION');
+    console.log('   Reason: WEBHOOK_SECRET not configured or is default value\n');
+  } else {
+    console.log('   ℹ️  No signature header - this might be a test request\n');
   }
 
   // STEP 3: Process webhook events
