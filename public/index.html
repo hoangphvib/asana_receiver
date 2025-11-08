@@ -230,6 +230,139 @@
       margin-top: 30px;
       font-size: 14px;
     }
+
+    /* Tab styles */
+    .tabs {
+      display: flex;
+      gap: 10px;
+      border-bottom: 2px solid #e2e8f0;
+      margin-bottom: 20px;
+    }
+
+    .tab {
+      padding: 12px 24px;
+      cursor: pointer;
+      font-weight: 500;
+      color: #718096;
+      border: none;
+      background: transparent;
+      border-bottom: 3px solid transparent;
+      transition: all 0.3s;
+      font-size: 15px;
+    }
+
+    .tab:hover {
+      color: #667eea;
+      background: #f7fafc;
+    }
+
+    .tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+      background: #f7fafc;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Database viewer styles */
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .filter-bar select,
+    .filter-bar input {
+      padding: 8px 12px;
+      border: 1px solid #cbd5e0;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+
+    .filter-bar input {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .pagination-info {
+      color: #718096;
+      font-size: 14px;
+    }
+
+    .pagination-controls {
+      display: flex;
+      gap: 10px;
+    }
+
+    .pagination button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-card h3 {
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0.9;
+      margin-bottom: 8px;
+    }
+
+    .stat-card .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #718096;
+    }
+
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -254,7 +387,6 @@
           <div>
             <strong>Webhook Endpoint:</strong> 
             <code id="webhookUrl" style="background: white; padding: 4px 8px; border-radius: 3px; cursor: pointer;" onclick="copyUrl('webhookUrl')">
-              Loading...
             </code>
             <button class="btn btn-primary" style="margin-left: 8px; padding: 4px 12px; font-size: 12px;" onclick="copyUrl('webhookUrl')">
               📋 Copy
@@ -263,7 +395,6 @@
           <div>
             <strong>Dashboard URL:</strong> 
             <code id="dashboardUrl" style="background: white; padding: 4px 8px; border-radius: 3px; cursor: pointer;" onclick="copyUrl('dashboardUrl')">
-              Loading...
             </code>
             <button class="btn btn-primary" style="margin-left: 8px; padding: 4px 12px; font-size: 12px;" onclick="copyUrl('dashboardUrl')">
               📋 Copy
@@ -274,18 +405,95 @@
     </div>
 
     <div class="card">
-      <h2>
-        <span>📨 Recent Events</span>
-        <div style="display: flex; gap: 10px;">
-          <button class="btn btn-primary" onclick="clearEvents()">🗑️ Clear History</button>
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('realtime')">📡 Real-time Events</button>
+        <button class="tab" onclick="switchTab('database')">💾 Database History</button>
+        <button class="tab" onclick="switchTab('stats')">📊 Statistics</button>
+      </div>
+
+      <!-- Real-time Events Tab -->
+      <div id="tab-realtime" class="tab-content active">
+        <h2>
+          <span>📨 Recent Events (In-Memory)</span>
+          <div style="display: flex; gap: 10px;">
+            <button class="btn btn-primary" onclick="clearEvents()">🗑️ Clear History</button>
+          </div>
+        </h2>
+        
+        <div id="eventList" class="event-list">
+          <div class="empty-state">
+            <div class="empty-state-icon">⏳</div>
+            <h3>Waiting for webhook events...</h3>
+            <p>Events will appear here automatically when received from Asana</p>
+          </div>
         </div>
-      </h2>
-      
-      <div id="eventList" class="event-list">
-        <div class="empty-state">
-          <div class="empty-state-icon">⏳</div>
-          <h3>Waiting for webhook events...</h3>
-          <p>Events will appear here automatically when received from Asana</p>
+      </div>
+
+      <!-- Database History Tab -->
+      <div id="tab-database" class="tab-content">
+        <h2>
+          <span>💾 Database Event History</span>
+          <button class="btn btn-primary" onclick="refreshDatabase()">🔄 Refresh</button>
+        </h2>
+
+        <div class="filter-bar">
+          <select id="filterResourceType" onchange="refreshDatabase()">
+            <option value="">All Resource Types</option>
+            <option value="task">Task</option>
+            <option value="project">Project</option>
+            <option value="story">Story</option>
+            <option value="tag">Tag</option>
+            <option value="workspace">Workspace</option>
+          </select>
+          
+          <select id="filterAction" onchange="refreshDatabase()">
+            <option value="">All Actions</option>
+            <option value="added">Added</option>
+            <option value="changed">Changed</option>
+            <option value="removed">Removed</option>
+            <option value="deleted">Deleted</option>
+          </select>
+
+          <input type="text" id="filterResourceGid" placeholder="Filter by Resource GID..." onchange="refreshDatabase()">
+
+          <select id="pageSize" onchange="refreshDatabase()">
+            <option value="20">20 per page</option>
+            <option value="50" selected>50 per page</option>
+            <option value="100">100 per page</option>
+            <option value="200">200 per page</option>
+          </select>
+        </div>
+        
+        <div id="databaseEventList" class="event-list">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading events from database...</p>
+          </div>
+        </div>
+
+        <div class="pagination" id="pagination" style="display: none;">
+          <div class="pagination-info">
+            Showing <strong id="pageStart">0</strong> - <strong id="pageEnd">0</strong> of <strong id="totalEvents">0</strong> events
+          </div>
+          <div class="pagination-controls">
+            <button class="btn btn-primary" onclick="previousPage()" id="btnPrev">← Previous</button>
+            <button class="btn btn-primary" onclick="nextPage()" id="btnNext">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Statistics Tab -->
+      <div id="tab-stats" class="tab-content">
+        <h2>
+          <span>📊 Database Statistics</span>
+          <button class="btn btn-primary" onclick="refreshStats()">🔄 Refresh</button>
+        </h2>
+
+        <div id="statsContent">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading statistics...</p>
+          </div>
         </div>
       </div>
     </div>
@@ -298,13 +506,30 @@
   <script>
     let eventSource = null;
     let eventCount = 0;
+    let currentPage = 0;
+    let currentPageSize = 50;
+    let totalDbEvents = 0;
+    let currentFilters = {
+      resourceType: '',
+      action: '',
+      resourceGid: ''
+    };
+
+    // Initialize URLs from client-side (more accurate than server-side PUBLIC_URL)
+    const currentOrigin = window.location.origin;
+    const webhookUrl = currentOrigin + '/webhook';
+    const dashboardUrl = currentOrigin;
+    
+    // Set URLs immediately
+    document.getElementById('webhookUrl').textContent = webhookUrl;
+    document.getElementById('dashboardUrl').textContent = dashboardUrl;
 
     // Function to copy URL to clipboard
     function copyUrl(elementId) {
       const element = document.getElementById(elementId);
       const text = element.textContent.trim();
       
-      if (text === 'Loading...') return;
+      if (!text) return;
       
       navigator.clipboard.writeText(text).then(() => {
         const btn = element.nextElementSibling;
@@ -318,21 +543,6 @@
         alert('Failed to copy URL');
       });
     }
-
-    // Fetch server info to get PUBLIC_URL
-    fetch('/api/info')
-      .then(res => res.json())
-      .then(data => {
-        if (data.urls) {
-          document.getElementById('webhookUrl').textContent = data.urls.webhook_endpoint;
-          document.getElementById('dashboardUrl').textContent = data.urls.dashboard;
-        }
-      })
-      .catch(err => {
-        console.error('Failed to fetch server info:', err);
-        document.getElementById('webhookUrl').textContent = window.location.origin + '/webhook';
-        document.getElementById('dashboardUrl').textContent = window.location.origin;
-      });
 
     // Connect to SSE endpoint
     function connectSSE() {
@@ -550,6 +760,291 @@
 
     // Start connection
     connectSSE();
+
+    // ============================================
+    // TAB MANAGEMENT
+    // ============================================
+
+    function switchTab(tabName) {
+      // Hide all tabs
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+      });
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+      });
+
+      // Show selected tab
+      document.getElementById(`tab-${tabName}`).classList.add('active');
+      event.target.classList.add('active');
+
+      // Load data for the tab
+      if (tabName === 'database') {
+        refreshDatabase();
+      } else if (tabName === 'stats') {
+        refreshStats();
+      }
+    }
+
+    // ============================================
+    // DATABASE HISTORY TAB
+    // ============================================
+
+    function refreshDatabase() {
+      currentPage = 0;
+      loadDatabaseEvents();
+    }
+
+    function loadDatabaseEvents() {
+      const pageSize = parseInt(document.getElementById('pageSize').value);
+      const offset = currentPage * pageSize;
+      
+      // Get filters
+      currentFilters.resourceType = document.getElementById('filterResourceType').value;
+      currentFilters.action = document.getElementById('filterAction').value;
+      currentFilters.resourceGid = document.getElementById('filterResourceGid').value;
+
+      // Build query params
+      const params = new URLSearchParams({
+        limit: pageSize,
+        offset: offset
+      });
+
+      // Show loading
+      const listElement = document.getElementById('databaseEventList');
+      listElement.innerHTML = `
+        <div class="loading">
+          <div class="spinner"></div>
+          <p>Loading events from database...</p>
+        </div>
+      `;
+
+      fetch(`/api/events/database?${params}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            displayDatabaseEvents(data.events);
+            updatePagination(data.events.length, pageSize, data.total, data.hasMore);
+          } else {
+            listElement.innerHTML = `
+              <div class="empty-state">
+                <div class="empty-state-icon">❌</div>
+                <h3>Error loading events</h3>
+                <p>${data.error}</p>
+              </div>
+            `;
+          }
+        })
+        .catch(error => {
+          console.error('Error loading database events:', error);
+          listElement.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">❌</div>
+              <h3>Error loading events</h3>
+              <p>${error.message}</p>
+            </div>
+          `;
+        });
+    }
+
+    function displayDatabaseEvents(events) {
+      const listElement = document.getElementById('databaseEventList');
+      
+      if (events.length === 0) {
+        listElement.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <h3>No events found</h3>
+            <p>No events in database matching the filters</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Filter events based on current filters
+      let filteredEvents = events;
+      if (currentFilters.resourceType) {
+        filteredEvents = filteredEvents.filter(e => e.resource_type === currentFilters.resourceType);
+      }
+      if (currentFilters.action) {
+        filteredEvents = filteredEvents.filter(e => e.action === currentFilters.action);
+      }
+      if (currentFilters.resourceGid) {
+        filteredEvents = filteredEvents.filter(e => 
+          e.resource_gid && e.resource_gid.includes(currentFilters.resourceGid)
+        );
+      }
+
+      listElement.innerHTML = '';
+      
+      filteredEvents.forEach(event => {
+        const eventItem = document.createElement('div');
+        eventItem.className = 'event-item';
+        
+        const actionIcon = getActionIcon(event.action);
+        const resourceIcon = getResourceIcon(event.resource_type);
+        
+        // Parse payload if it's a string
+        let payload = event.payload;
+        if (typeof payload === 'string') {
+          try {
+            payload = JSON.parse(payload);
+          } catch (e) {
+            payload = event.payload;
+          }
+        }
+
+        const resourceName = payload?.resource?.name || payload?.name || 'N/A';
+        const userName = payload?.user?.name || payload?.user?.gid || 'N/A';
+
+        eventItem.innerHTML = `
+          <div class="event-header">
+            <div class="event-title">
+              ${actionIcon} ${event.action} - ${resourceIcon} ${event.resource_type}
+              ${event.signature_verified ? '✅' : '⚠️'}
+            </div>
+            <div class="event-time">${formatTime(event.received_at)}</div>
+          </div>
+          <div class="event-details">
+            <div><strong>ID:</strong> ${event.id}</div>
+            <div><strong>Resource GID:</strong> ${event.resource_gid || 'N/A'}</div>
+            <div><strong>Resource Name:</strong> ${resourceName}</div>
+            <div><strong>User:</strong> ${userName}</div>
+            <div><strong>Created:</strong> ${formatTime(event.created_at)}</div>
+            <div><strong>Received:</strong> ${formatTime(event.received_at)}</div>
+            <div><strong>Verified:</strong> ${event.signature_verified ? '✅ Yes' : '⚠️ No'}</div>
+          </div>
+          <div class="toggle-details" onclick="toggleRawData(this)">
+            🔍 Show raw JSON
+          </div>
+          <pre class="event-raw">${JSON.stringify(payload, null, 2)}</pre>
+        `;
+
+        listElement.appendChild(eventItem);
+      });
+    }
+
+    function updatePagination(eventsCount, pageSize, total, hasMore) {
+      const pagination = document.getElementById('pagination');
+      const pageStart = document.getElementById('pageStart');
+      const pageEnd = document.getElementById('pageEnd');
+      const btnPrev = document.getElementById('btnPrev');
+      const btnNext = document.getElementById('btnNext');
+
+      if (eventsCount === 0) {
+        pagination.style.display = 'none';
+        return;
+      }
+
+      pagination.style.display = 'flex';
+      
+      const start = currentPage * pageSize + 1;
+      const end = start + eventsCount - 1;
+      
+      pageStart.textContent = start;
+      pageEnd.textContent = end;
+      document.getElementById('totalEvents').textContent = total || (end + (hasMore ? '+' : ''));
+
+      btnPrev.disabled = currentPage === 0;
+      btnNext.disabled = !hasMore;
+    }
+
+    function previousPage() {
+      if (currentPage > 0) {
+        currentPage--;
+        loadDatabaseEvents();
+      }
+    }
+
+    function nextPage() {
+      currentPage++;
+      loadDatabaseEvents();
+    }
+
+    // ============================================
+    // STATISTICS TAB
+    // ============================================
+
+    function refreshStats() {
+      const statsContent = document.getElementById('statsContent');
+      
+      statsContent.innerHTML = `
+        <div class="loading">
+          <div class="spinner"></div>
+          <p>Loading statistics...</p>
+        </div>
+      `;
+
+      Promise.all([
+        fetch('/api/database/stats').then(r => r.json()),
+        fetch('/api/webhooks').then(r => r.json())
+      ])
+      .then(([statsData, webhooksData]) => {
+        displayStats(statsData.stats, webhooksData.webhooks);
+      })
+      .catch(error => {
+        console.error('Error loading stats:', error);
+        statsContent.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">❌</div>
+            <h3>Error loading statistics</h3>
+            <p>${error.message}</p>
+          </div>
+        `;
+      });
+    }
+
+    function displayStats(stats, webhooks) {
+      const statsContent = document.getElementById('statsContent');
+      
+      const html = `
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h3>Total Events (DB)</h3>
+            <div class="stat-value">${stats?.total_events || 0}</div>
+          </div>
+          <div class="stat-card">
+            <h3>Events (24h)</h3>
+            <div class="stat-value">${stats?.events_24h || 0}</div>
+          </div>
+          <div class="stat-card">
+            <h3>Active Webhooks</h3>
+            <div class="stat-value">${stats?.active_webhooks || 0}</div>
+          </div>
+          <div class="stat-card">
+            <h3>Verified Events</h3>
+            <div class="stat-value">${stats?.verified_events || 0}</div>
+          </div>
+        </div>
+
+        <h3 style="margin: 20px 0 15px 0; color: #333;">📋 Registered Webhooks</h3>
+        <div id="webhooksList">
+          ${webhooks && webhooks.length > 0 ? 
+            webhooks.map(webhook => `
+              <div class="event-item" style="border-left-color: ${webhook.active ? '#48bb78' : '#cbd5e0'}">
+                <div class="event-header">
+                  <div class="event-title">
+                    ${webhook.active ? '🟢' : '⚫'} ${webhook.resource_type}
+                  </div>
+                  <div class="event-time">${formatTime(webhook.created_at)}</div>
+                </div>
+                <div class="event-details">
+                  <div><strong>Webhook GID:</strong> ${webhook.webhook_gid}</div>
+                  <div><strong>Resource GID:</strong> ${webhook.resource_gid}</div>
+                  <div><strong>Target URL:</strong> ${webhook.target_url}</div>
+                  <div><strong>Event Count:</strong> ${webhook.event_count || 0}</div>
+                  <div><strong>Last Event:</strong> ${webhook.last_event_at ? formatTime(webhook.last_event_at) : 'Never'}</div>
+                  <div><strong>Active:</strong> ${webhook.active ? '✅ Yes' : '❌ No'}</div>
+                </div>
+              </div>
+            `).join('') :
+            '<div class="empty-state"><p>No webhooks registered yet</p></div>'
+          }
+        </div>
+      `;
+      
+      statsContent.innerHTML = html;
+    }
   </script>
 </body>
 </html>

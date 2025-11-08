@@ -187,21 +187,78 @@ async function saveEvent(eventData) {
 }
 
 /**
- * Get recent events (paginated)
+ * Get recent events (paginated with optional filters)
  */
-async function getRecentEvents(limit = 50, offset = 0) {
-  const query = `
-    SELECT * FROM webhook_events 
-    ORDER BY received_at DESC 
-    LIMIT $1 OFFSET $2;
-  `;
+async function getRecentEvents(limit = 50, offset = 0, filters = {}) {
+  let query = 'SELECT * FROM webhook_events WHERE 1=1';
+  const params = [];
+  let paramCount = 0;
+  
+  // Add filters
+  if (filters.resourceType) {
+    paramCount++;
+    query += ` AND resource_type = $${paramCount}`;
+    params.push(filters.resourceType);
+  }
+  
+  if (filters.action) {
+    paramCount++;
+    query += ` AND action = $${paramCount}`;
+    params.push(filters.action);
+  }
+  
+  if (filters.resourceGid) {
+    paramCount++;
+    query += ` AND resource_gid LIKE $${paramCount}`;
+    params.push(`%${filters.resourceGid}%`);
+  }
+  
+  // Add ordering and pagination
+  query += ` ORDER BY received_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+  params.push(limit, offset);
   
   try {
-    const result = await pool.query(query, [limit, offset]);
+    const result = await pool.query(query, params);
     return result.rows;
   } catch (error) {
     console.error('Error getting events:', error);
     return [];
+  }
+}
+
+/**
+ * Get total count of events (with optional filters)
+ */
+async function getTotalEventCount(filters = {}) {
+  let query = 'SELECT COUNT(*) as total FROM webhook_events WHERE 1=1';
+  const params = [];
+  let paramCount = 0;
+  
+  // Add filters
+  if (filters.resourceType) {
+    paramCount++;
+    query += ` AND resource_type = $${paramCount}`;
+    params.push(filters.resourceType);
+  }
+  
+  if (filters.action) {
+    paramCount++;
+    query += ` AND action = $${paramCount}`;
+    params.push(filters.action);
+  }
+  
+  if (filters.resourceGid) {
+    paramCount++;
+    query += ` AND resource_gid LIKE $${paramCount}`;
+    params.push(`%${filters.resourceGid}%`);
+  }
+  
+  try {
+    const result = await pool.query(query, params);
+    return parseInt(result.rows[0].total);
+  } catch (error) {
+    console.error('Error getting event count:', error);
+    return 0;
   }
 }
 
@@ -327,6 +384,7 @@ module.exports = {
   // Event functions
   saveEvent,
   getRecentEvents,
+  getTotalEventCount,
   getEventsByWebhook,
   getEventStats,
   cleanupOldEvents,

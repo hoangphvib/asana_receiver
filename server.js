@@ -140,20 +140,36 @@ app.get('/api/events/history', (req, res) => {
   });
 });
 
-// Get events from database
+// Get events from database with filtering
 app.get('/api/events/database', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
     const offset = parseInt(req.query.offset) || 0;
+    const resourceType = req.query.resource_type || null;
+    const action = req.query.action || null;
+    const resourceGid = req.query.resource_gid || null;
     
-    const events = await db.getRecentEvents(limit, offset);
+    const events = await db.getRecentEvents(limit, offset, {
+      resourceType,
+      action,
+      resourceGid
+    });
+    
+    // Get total count for pagination
+    const totalCount = await db.getTotalEventCount({
+      resourceType,
+      action,
+      resourceGid
+    });
     
     res.json({
       success: true,
       events: events,
       count: events.length,
+      total: totalCount,
       limit: limit,
-      offset: offset
+      offset: offset,
+      hasMore: (offset + events.length) < totalCount
     });
   } catch (error) {
     res.status(500).json({
@@ -242,30 +258,71 @@ app.post('/api/events/clear', (req, res) => {
 // Webhook endpoint - handles both handshake and events
 app.post('/webhook', (req, res) => {
   console.log('\n=== Incoming Webhook Request ===');
-  console.log('Headers:', JSON.stringify(req.headers, null, 2));
-  console.log('Body:', JSON.stringify(req.body, null, 2));
+  console.log('Timestamp:', new Date().toISOString());
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
+  console.log('IP:', req.ip || req.connection.remoteAddress);
+  console.log('\n--- Request Headers ---');
+  console.log(JSON.stringify(req.headers, null, 2));
+  console.log('\n--- Request Body ---');
+  console.log(JSON.stringify(req.body, null, 2));
+  console.log('\n--- Raw Body (for signature verification) ---');
+  console.log('Raw Body:', req.rawBody ? req.rawBody.substring(0, 200) : 'UNDEFINED');
+  console.log('Raw Body Length:', req.rawBody ? req.rawBody.length : 'UNDEFINED');
 
   // STEP 1: Handle Asana webhook handshake
-  if (req.headers['X-Hook-Secret']) {
-    const hookSecret = req.headers['X-Hook-Secret'];
+  if (req.headers['x-hook-secret'] || req.headers['X-Hook-Secret']) {
+    const hookSecret = req.headers['x-hook-secret'] || req.headers['X-Hook-Secret'];
     console.log('\n╔══════════════════════════════════════════════════════════════════╗');
     console.log('║  🤝 HANDSHAKE DETECTED!                                          ║');
     console.log('╟──────────────────────────────────────────────────────────────────╢');
-    console.log(`║  Secret: ${hookSecret.substring(0, 40)}... ║`);
+    console.log('║  📋 HANDSHAKE DETAILS:                                           ║');
+    console.log('╟──────────────────────────────────────────────────────────────────╢');
+    console.log(`║  Timestamp:  ${new Date().toISOString().padEnd(47)} ║`);
+    console.log(`║  Source IP:  ${(req.ip || req.connection.remoteAddress || 'unknown').padEnd(47)} ║`);
+    console.log(`║  User-Agent: ${(req.headers['user-agent'] || 'unknown').substring(0, 47).padEnd(47)} ║`);
+    console.log('╟──────────────────────────────────────────────────────────────────╢');
+    console.log(`║  Secret (full): ${hookSecret.padEnd(45)} ║`);
+    console.log(`║  Secret Length: ${String(hookSecret.length).padEnd(45)} ║`);
+    console.log('╟──────────────────────────────────────────────────────────────────╢');
+    console.log('║  📨 REQUEST HEADERS (all):                                       ║');
+    Object.entries(req.headers).forEach(([key, value]) => {
+      const line = `${key}: ${value}`.substring(0, 64);
+      console.log(`║  ${line.padEnd(64)} ║`);
+    });
+    console.log('╟──────────────────────────────────────────────────────────────────╢');
+    console.log('║  📦 REQUEST BODY:                                                ║');
+    const bodyStr = JSON.stringify(req.body, null, 2);
+    bodyStr.split('\n').forEach(line => {
+      const truncated = line.substring(0, 64);
+      console.log(`║  ${truncated.padEnd(64)} ║`);
+    });
     console.log('╚══════════════════════════════════════════════════════════════════╝\n');
+    
+    console.log('\n🔄 RESPONDING TO ASANA...');
+    console.log('   Setting response header: X-Hook-Secret =', hookSecret.substring(0, 20) + '...');
+    console.log('   Response Status: 200 OK');
+    console.log('   Response Time:', new Date().toISOString());
     
     // Echo secret back to Asana FIRST (must respond quickly)
     res.set('X-Hook-Secret', hookSecret);
     res.status(200).send();
     
-    console.log('✅ Handshake successful! Secret echoed back to Asana.\n');
+    console.log('\n✅ HANDSHAKE RESPONSE SENT!');
+    console.log('   ✓ Secret echoed back to Asana');
+    console.log('   ✓ HTTP 200 OK sent');
+    console.log('   ✓ Connection completed\n');
 
     // SAVE secret to memory (for this server instance)
     runtimeSecret = hookSecret;
     WEBHOOK_SECRET = hookSecret;
     
-    console.log('💾 Secret saved to memory for this session');
-    console.log('✅ Signature verification is now ENABLED for subsequent events');
+    console.log('💾 SAVING SECRET...');
+    console.log('   ✓ Saved to runtime memory (runtimeSecret)');
+    console.log('   ✓ Saved to WEBHOOK_SECRET variable');
+    console.log('   ✓ Secret Length:', hookSecret.length, 'characters');
+    console.log('   ✓ Secret Preview:', hookSecret.substring(0, 30) + '...');
+    console.log('   ✅ Signature verification is now ENABLED for subsequent events\n');
     
     // Save webhook info to PostgreSQL database
     (async () => {

@@ -9,7 +9,9 @@ Production-ready webhook receiver for Asana with PostgreSQL persistence, real-ti
 - ✅ **Real-time SSE** - Broadcast events to connected clients
 - ✅ **Comprehensive Logging** - Detailed trace for debugging
 - ✅ **RESTful API** - Query webhooks and events
-- ✅ **Web Dashboard** - Monitor events in real-time
+- ✅ **Advanced Web Dashboard** - 3 tabs with pagination, filtering, and statistics
+- ✅ **Database History Viewer** - Browse all events with filters and pagination
+- ✅ **Performance Optimized** - Indexed queries, server-side pagination
 - ✅ **Production Ready** - Error handling, connection pooling, graceful shutdown
 
 ## 📋 Quick Start
@@ -86,7 +88,10 @@ curl -X POST https://app.asana.com/api/1.0/webhooks \
 - `POST /webhook` - Receive webhooks from Asana (handshake + events)
 
 ### Dashboard
-- `GET /` - Web dashboard to monitor events in real-time
+- `GET /` - Advanced web dashboard with 3 tabs:
+  - **📡 Real-time Events** - Live SSE stream (in-memory, last 50 events)
+  - **💾 Database History** - Browse all events with pagination (20/50/100/200 per page)
+  - **📊 Statistics** - Overview, charts, and webhook management
 
 ### API Endpoints
 
@@ -103,7 +108,14 @@ GET /api/webhooks                    # List all webhooks from database
 #### Events
 ```bash
 GET /api/events/history              # Get in-memory event history (last 50)
-GET /api/events/database?limit=50    # Get events from PostgreSQL
+
+# Get events from PostgreSQL with filtering and pagination
+GET /api/events/database?limit=50&offset=0&resource_type=task&action=changed
+
+# Response includes: events[], count, total, hasMore
+# Filters: resource_type, action, resource_gid
+# Sorting: DESC by received_at (newest first)
+
 POST /api/events/clear               # Clear in-memory history
 ```
 
@@ -333,8 +345,39 @@ Configured in `db.js`:
 
 ## 📚 Documentation
 
-- [WEBHOOK_FLOW_GUIDE.md](./WEBHOOK_FLOW_GUIDE.md) - Complete flow trace and debugging guide
-- [README_DATABASE.md](./README_DATABASE.md) - Database setup and schema details
+### Main Docs
+- [WEBHOOK_FLOW_GUIDE.md](./docs/WEBHOOK_FLOW_GUIDE.md) - Complete flow trace and debugging guide
+- [README_DATABASE.md](./docs/README_DATABASE.md) - Database setup and schema details
+
+### New Dashboard Features
+- [QUICK_START_TABS.md](./QUICK_START_TABS.md) - Quick guide for new tab features
+- [DATABASE_EVENTS_SUMMARY.md](./docs/DATABASE_EVENTS_SUMMARY.md) - Verification & features overview
+- [CHANGELOG_TABS.md](./CHANGELOG_TABS.md) - Detailed changelog for v2.0.0
+
+### Dashboard Features (v2.0.0)
+
+#### 📡 Tab 1: Real-time Events
+- Live SSE connection
+- Last 50 events (in-memory)
+- Auto-update on new events
+- Expandable JSON payloads
+
+#### 💾 Tab 2: Database History
+- **Pagination**: 20, 50, 100, or 200 events per page
+- **Filters**:
+  - Resource Type (task, project, story, tag, workspace)
+  - Action (added, changed, removed, deleted)
+  - Resource GID (text search)
+- **Sorting**: DESC by `received_at` (newest first)
+- **Performance**: Server-side pagination, indexed queries
+- **Display**: Full event details with signature verification status
+
+#### 📊 Tab 3: Statistics
+- Total events count
+- Events in last 24 hours
+- Active webhooks count
+- Verified events count
+- Webhook list with details
 
 ## 🤝 Integration Examples
 
