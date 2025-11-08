@@ -1,6 +1,6 @@
 # Asana Webhook Receiver v2.0
 
-Production-ready webhook receiver for Asana with **Clean Architecture**, PostgreSQL persistence, real-time SSE broadcasting, and DCT enrichment.
+Production-ready webhook receiver for Asana with **Clean Architecture**, PostgreSQL persistence, and real-time SSE broadcasting.
 
 ## ✨ What's New in v2.0
 
@@ -18,12 +18,10 @@ Production-ready webhook receiver for Asana with **Clean Architecture**, Postgre
 - ✅ **PostgreSQL Integration** - Persist webhooks and events to database
 - ✅ **Real-time SSE** - Broadcast events to connected clients
 - ✅ **RESTful API** - Query webhooks and events
-- ✅ **DCT Enrichment** - Link events with customer/project data
 - ✅ **Performance Optimized** - Indexed queries, connection pooling
 
-### Dashboard (4 Tabs)
+### Dashboard (3 Tabs)
 - 📡 **Real-time Events** - Live SSE stream
-- ✨ **Enriched Events** - Events with DCT customer/project data
 - 💾 **Database History** - Browse all events with filters
 - 📊 **Statistics** - Overview and metrics
 
@@ -76,7 +74,6 @@ asana_receiver/
 │   └── server.js                 # Server startup
 │
 ├── db.js                         # Database client
-├── dct-client.js                 # DCT database client
 ├── public/                       # Dashboard UI
 ├── database/                     # Database setup
 │   ├── docker-compose.yml
@@ -144,11 +141,6 @@ DATABASE_NAME=asana_receiver
 DATABASE_USER=asana_admin
 DATABASE_PASSWORD=asana_secure_pass_2024
 
-# DCT Database (optional - for enrichment)
-DCT_DATABASE_HOST=localhost
-DCT_DATABASE_PORT=5432
-DCT_DATABASE_NAME=asana_dct
-
 # Webhook
 ASANA_WEBHOOK_SECRET=your_secret_here
 ```
@@ -209,15 +201,6 @@ Parameters for `/api/events/database`:
 - `action` - Filter by action (added, changed, removed)
 - `resource_gid` - Filter by GID
 
-### Enrichment
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/dct/test` | GET | Test DCT connection |
-| `/api/dct/stats` | GET | DCT database stats |
-| `/api/events/enriched` | GET | Events with DCT data |
-| `/api/events/:id/enrich` | GET | Enrich single event |
-
 ### SSE Stream
 
 | Endpoint | Method | Description |
@@ -233,16 +216,7 @@ Parameters for `/api/events/database`:
 - Auto-updates when new events arrive
 - Clear history button
 
-### 2. Enriched Events Tab
-
-- Events with DCT customer/project data
-- See customer CIF, amounts (VND)
-- Task assignee, due dates
-- Project statistics
-- Filter by type, action
-- "Only DCT" checkbox
-
-### 3. Database History Tab
+### 2. Database History Tab
 
 - Browse ALL events from database
 - Filters: Resource Type, Action, GID
@@ -250,7 +224,7 @@ Parameters for `/api/events/database`:
 - Sort: Newest first (DESC)
 - Expandable JSON payloads
 
-### 4. Statistics Tab
+### 3. Statistics Tab
 
 - Total events count
 - Events last 24h
@@ -342,28 +316,10 @@ DATABASE_PASSWORD=***
 DATABASE_POOL_MIN=2
 DATABASE_POOL_MAX=10
 
-# DCT Database (enrichment)
-DCT_DATABASE_HOST=localhost
-DCT_DATABASE_PORT=5432
-DCT_DATABASE_NAME=asana_dct
-DCT_DATABASE_USER=asana_admin
-DCT_DATABASE_PASSWORD=***
-
 # Webhook
 ASANA_WEBHOOK_SECRET=***     # For signature verification
 WEBHOOK_MAX_HISTORY=50       # In-memory history size
 
-# Features
-ENABLE_DCT_ENRICHMENT=true   # Enable/disable DCT features
-```
-
-### Feature Flags
-
-```javascript
-// src/config/index.js
-config.features = {
-  dctEnrichment: process.env.ENABLE_DCT_ENRICHMENT !== 'false'
-};
 ```
 
 ## 🚀 Deployment
@@ -469,23 +425,10 @@ cat .env | grep DATABASE
 3. Check Asana webhook status
 4. Check server logs
 
-### DCT enrichment not working
-
-```bash
-# Test DCT connection
-curl http://localhost:3500/api/dct/test
-
-# Check DCT database is running
-psql -h localhost -p 5432 -U asana_admin -d asana_dct
-
-# Verify DCT_DATABASE_* in .env
-```
-
 ## 📊 Performance
 
 - Request time: ~45ms
 - Database query: ~10-20ms
-- Enrichment: ~10-20ms per event
 - Memory: ~55MB base
 - Connections: Pooled (2-10 per DB)
 

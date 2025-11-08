@@ -10,7 +10,6 @@ const SSEManager = require('./utils/sse');
 const { requestLogger, webhookLogger } = require('./middleware/logger.middleware');
 const { notFoundHandler, errorHandler } = require('./middleware/error.middleware');
 const createWebhookRoutes = require('./routes/webhook.routes');
-const enrichmentRoutes = require('./routes/enrichment.routes');
 const databaseRoutes = require('./routes/database.routes');
 
 /**
@@ -103,11 +102,6 @@ function createApp() {
 
   // Database routes
   app.use(databaseRoutes);
-
-  // Enrichment routes (if enabled)
-  if (config.features.dctEnrichment) {
-    app.use(enrichmentRoutes);
-  }
 
   // ============================================
   // ERROR HANDLING

@@ -24,25 +24,12 @@ const config = {
     poolMax: parseInt(process.env.DATABASE_POOL_MAX) || 10,
   },
 
-  // DCT Database (for enrichment)
-  dctDatabase: {
-    host: process.env.DCT_DATABASE_HOST || 'localhost',
-    port: parseInt(process.env.DCT_DATABASE_PORT) || 5432,
-    name: process.env.DCT_DATABASE_NAME || 'asana_dct',
-    user: process.env.DCT_DATABASE_USER || 'asana_admin',
-    password: process.env.DCT_DATABASE_PASSWORD || 'asana_secure_pass_2024',
-  },
-
   // Webhook
   webhook: {
     secret: process.env.ASANA_WEBHOOK_SECRET || null,
     maxHistory: parseInt(process.env.WEBHOOK_MAX_HISTORY) || 50,
   },
 
-  // Features
-  features: {
-    dctEnrichment: process.env.ENABLE_DCT_ENRICHMENT !== 'false', // Default enabled
-  },
 };
 
 /**
