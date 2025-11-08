@@ -363,6 +363,81 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+
+    /* Enriched event styles */
+    .enrichment-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+
+    .enrichment-found {
+      background: #c6f6d5;
+      color: #22543d;
+    }
+
+    .enrichment-not-found {
+      background: #fed7d7;
+      color: #742a2a;
+    }
+
+    .enriched-data {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 5px;
+      padding: 12px;
+      margin-top: 10px;
+    }
+
+    .enriched-section {
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e0e7ff;
+    }
+
+    .enriched-section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .enriched-section h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e40af;
+      margin-bottom: 8px;
+    }
+
+    .enriched-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 6px 12px;
+      font-size: 13px;
+    }
+
+    .enriched-label {
+      font-weight: 600;
+      color: #4b5563;
+    }
+
+    .enriched-value {
+      color: #1f2937;
+    }
+
+    .customer-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -407,24 +482,84 @@
     <div class="card">
       <div class="tabs">
         <button class="tab active" onclick="switchTab('realtime')">📡 Real-time Events</button>
+        <button class="tab" onclick="switchTab('enriched')">✨ Enriched Events</button>
         <button class="tab" onclick="switchTab('database')">💾 Database History</button>
         <button class="tab" onclick="switchTab('stats')">📊 Statistics</button>
       </div>
 
       <!-- Real-time Events Tab -->
       <div id="tab-realtime" class="tab-content active">
-        <h2>
+      <h2>
           <span>📨 Recent Events (In-Memory)</span>
-          <div style="display: flex; gap: 10px;">
-            <button class="btn btn-primary" onclick="clearEvents()">🗑️ Clear History</button>
+        <div style="display: flex; gap: 10px;">
+          <button class="btn btn-primary" onclick="clearEvents()">🗑️ Clear History</button>
+        </div>
+      </h2>
+      
+      <div id="eventList" class="event-list">
+        <div class="empty-state">
+          <div class="empty-state-icon">⏳</div>
+          <h3>Waiting for webhook events...</h3>
+          <p>Events will appear here automatically when received from Asana</p>
           </div>
+        </div>
+      </div>
+
+      <!-- Enriched Events Tab -->
+      <div id="tab-enriched" class="tab-content">
+        <h2>
+          <span>✨ Enriched Events (with DCT Data)</span>
+          <button class="btn btn-primary" onclick="refreshEnriched()">🔄 Refresh</button>
         </h2>
+
+        <div class="alert alert-info" id="dct-connection-status">
+          <strong>📊 DCT Database:</strong> <span id="dct-status-text">Checking connection...</span>
+        </div>
+
+        <div class="filter-bar">
+          <select id="filterResourceTypeEnriched" onchange="refreshEnriched()">
+            <option value="">All Resource Types</option>
+            <option value="task">Task</option>
+            <option value="project">Project</option>
+            <option value="story">Story</option>
+            <option value="tag">Tag</option>
+            <option value="workspace">Workspace</option>
+          </select>
+          
+          <select id="filterActionEnriched" onchange="refreshEnriched()">
+            <option value="">All Actions</option>
+            <option value="added">Added</option>
+            <option value="changed">Changed</option>
+            <option value="removed">Removed</option>
+            <option value="deleted">Deleted</option>
+          </select>
+
+          <select id="pageSizeEnriched" onchange="refreshEnriched()">
+            <option value="20">20 per page</option>
+            <option value="50" selected>50 per page</option>
+            <option value="100">100 per page</option>
+          </select>
+
+          <label style="display: flex; align-items: center; gap: 5px;">
+            <input type="checkbox" id="showOnlyMapped" onchange="refreshEnriched()">
+            <span>Only show events found in DCT</span>
+          </label>
+        </div>
         
-        <div id="eventList" class="event-list">
-          <div class="empty-state">
-            <div class="empty-state-icon">⏳</div>
-            <h3>Waiting for webhook events...</h3>
-            <p>Events will appear here automatically when received from Asana</p>
+        <div id="enrichedEventList" class="event-list">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading enriched events...</p>
+          </div>
+        </div>
+
+        <div class="pagination" id="paginationEnriched" style="display: none;">
+          <div class="pagination-info">
+            Showing <strong id="pageStartEnriched">0</strong> - <strong id="pageEndEnriched">0</strong> of <strong id="totalEnrichedEvents">0</strong> events
+          </div>
+          <div class="pagination-controls">
+            <button class="btn btn-primary" onclick="previousPageEnriched()" id="btnPrevEnriched">← Previous</button>
+            <button class="btn btn-primary" onclick="nextPageEnriched()" id="btnNextEnriched">Next →</button>
           </div>
         </div>
       </div>
@@ -514,6 +649,10 @@
       action: '',
       resourceGid: ''
     };
+    
+    // Enriched events state
+    let currentPageEnriched = 0;
+    let dctConnected = false;
 
     // Initialize URLs from client-side (more accurate than server-side PUBLIC_URL)
     const currentOrigin = window.location.origin;
@@ -783,6 +922,9 @@
         refreshDatabase();
       } else if (tabName === 'stats') {
         refreshStats();
+      } else if (tabName === 'enriched') {
+        checkDCTConnection();
+        refreshEnriched();
       }
     }
 
@@ -1044,6 +1186,279 @@
       `;
       
       statsContent.innerHTML = html;
+    }
+
+    // ============================================
+    // ENRICHED EVENTS TAB
+    // ============================================
+
+    async function checkDCTConnection() {
+      try {
+        const response = await fetch('/api/dct/test');
+        const data = await response.json();
+        
+        const statusEl = document.getElementById('dct-status-text');
+        const statusCard = document.getElementById('dct-connection-status');
+        
+        if (data.success) {
+          dctConnected = true;
+          statusEl.textContent = `✅ Connected to ${data.database} (${data.time})`;
+          statusCard.className = 'alert alert-success';
+        } else {
+          dctConnected = false;
+          statusEl.textContent = `❌ Not connected: ${data.error || 'Unknown error'}`;
+          statusCard.className = 'alert alert-info';
+          statusCard.style.background = '#fed7d7';
+          statusCard.style.borderLeftColor = '#f56565';
+        }
+      } catch (error) {
+        console.error('Error checking DCT connection:', error);
+        dctConnected = false;
+        document.getElementById('dct-status-text').textContent = '❌ Connection failed';
+      }
+    }
+
+    function refreshEnriched() {
+      currentPageEnriched = 0;
+      loadEnrichedEvents();
+    }
+
+    function loadEnrichedEvents() {
+      const pageSize = parseInt(document.getElementById('pageSizeEnriched').value);
+      const offset = currentPageEnriched * pageSize;
+      const resourceType = document.getElementById('filterResourceTypeEnriched').value;
+      const action = document.getElementById('filterActionEnriched').value;
+      const showOnlyMapped = document.getElementById('showOnlyMapped').checked;
+      
+      const params = new URLSearchParams({
+        limit: pageSize,
+        offset: offset
+      });
+      
+      if (resourceType) params.append('resource_type', resourceType);
+      if (action) params.append('action', action);
+
+      const listElement = document.getElementById('enrichedEventList');
+      listElement.innerHTML = `
+        <div class="loading">
+          <div class="spinner"></div>
+          <p>Loading enriched events...</p>
+        </div>
+      `;
+
+      fetch(`/api/events/enriched?${params}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            let events = data.events;
+            
+            // Filter to only show mapped if checkbox is checked
+            if (showOnlyMapped) {
+              events = events.filter(e => e.enrichment && e.enrichment.found);
+            }
+            
+            displayEnrichedEvents(events);
+            updatePaginationEnriched(events.length, pageSize, data.total, data.hasMore);
+          } else {
+            listElement.innerHTML = `
+              <div class="empty-state">
+                <div class="empty-state-icon">❌</div>
+                <h3>Error loading enriched events</h3>
+                <p>${data.error}</p>
+              </div>
+            `;
+          }
+        })
+        .catch(error => {
+          console.error('Error loading enriched events:', error);
+          listElement.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">❌</div>
+              <h3>Error loading enriched events</h3>
+              <p>${error.message}</p>
+            </div>
+          `;
+        });
+    }
+
+    function displayEnrichedEvents(events) {
+      const listElement = document.getElementById('enrichedEventList');
+      
+      if (events.length === 0) {
+        listElement.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <h3>No events found</h3>
+            <p>No enriched events matching the filters</p>
+          </div>
+        `;
+        return;
+      }
+
+      listElement.innerHTML = '';
+      
+      events.forEach(event => {
+        const eventItem = document.createElement('div');
+        eventItem.className = 'event-item';
+        
+        const actionIcon = getActionIcon(event.action);
+        const resourceIcon = getResourceIcon(event.resource_type);
+        
+        const enriched = event.enrichment;
+        const enrichmentBadge = enriched && enriched.found
+          ? '<span class="enrichment-badge enrichment-found">✅ Found in DCT</span>'
+          : '<span class="enrichment-badge enrichment-not-found">❌ Not in DCT</span>';
+
+        let enrichedContent = '';
+        
+        if (enriched && enriched.found && enriched.data) {
+          enrichedContent = buildEnrichedContent(enriched.data);
+        }
+
+        eventItem.innerHTML = `
+          <div class="event-header">
+            <div class="event-title">
+              ${actionIcon} ${event.action} - ${resourceIcon} ${event.resource_type}
+              ${event.signature_verified ? '✅' : '⚠️'}
+              ${enrichmentBadge}
+            </div>
+            <div class="event-time">${formatTime(event.received_at)}</div>
+          </div>
+          <div class="event-details">
+            <div><strong>ID:</strong> ${event.id}</div>
+            <div><strong>Resource GID:</strong> ${event.resource_gid || 'N/A'}</div>
+            <div><strong>Created:</strong> ${formatTime(event.created_at)}</div>
+            <div><strong>Received:</strong> ${formatTime(event.received_at)}</div>
+            <div><strong>Verified:</strong> ${event.signature_verified ? '✅ Yes' : '⚠️ No'}</div>
+          </div>
+          ${enrichedContent}
+          <div class="toggle-details" onclick="toggleRawData(this)">
+            🔍 Show raw JSON
+          </div>
+          <pre class="event-raw">${JSON.stringify(event.original_payload, null, 2)}</pre>
+        `;
+
+        listElement.appendChild(eventItem);
+      });
+    }
+
+    function buildEnrichedContent(data) {
+      if (!data) return '';
+      
+      let html = '<div class="enriched-data">';
+      
+      if (data.type === 'task') {
+        html += '<div class="enriched-section">';
+        html += '<h4>📋 Task Information</h4>';
+        html += '<div class="enriched-grid">';
+        html += `<div class="enriched-label">Name:</div><div class="enriched-value">${data.task.task_name || 'N/A'}</div>`;
+        html += `<div class="enriched-label">Completed:</div><div class="enriched-value">${data.task.completed ? '✅ Yes' : '❌ No'}</div>`;
+        if (data.task.assignee_name) {
+          html += `<div class="enriched-label">Assignee:</div><div class="enriched-value">${data.task.assignee_name}</div>`;
+        }
+        if (data.task.due_on) {
+          html += `<div class="enriched-label">Due Date:</div><div class="enriched-value">${data.task.due_on}</div>`;
+        }
+        if (data.task.permalink_url) {
+          html += `<div class="enriched-label">Link:</div><div class="enriched-value"><a href="${data.task.permalink_url}" target="_blank">Open in Asana →</a></div>`;
+        }
+        html += '</div></div>';
+
+        if (data.customer) {
+          html += '<div class="enriched-section">';
+          html += '<h4>👤 Customer Information</h4>';
+          html += `<div style="margin-bottom: 8px;"><span class="customer-badge">🏦 ${data.customer.name}</span></div>`;
+          html += '<div class="enriched-grid">';
+          html += `<div class="enriched-label">CIF:</div><div class="enriched-value">${data.customer.cif || 'N/A'}</div>`;
+          html += `<div class="enriched-label">UUID:</div><div class="enriched-value">${data.customer.uuid || 'N/A'}</div>`;
+          if (data.customer.total_amount) {
+            html += `<div class="enriched-label">Total Amount:</div><div class="enriched-value">${formatCurrency(data.customer.total_amount)}</div>`;
+          }
+          if (data.customer.principal_amount) {
+            html += `<div class="enriched-label">Principal:</div><div class="enriched-value">${formatCurrency(data.customer.principal_amount)}</div>`;
+          }
+          html += '</div></div>';
+        }
+
+        html += '<div class="enriched-section">';
+        html += '<h4>📁 Project Information</h4>';
+        html += '<div class="enriched-grid">';
+        html += `<div class="enriched-label">Project:</div><div class="enriched-value">${data.project.name || 'N/A'}</div>`;
+        html += `<div class="enriched-label">Workspace:</div><div class="enriched-value">${data.workspace.name || 'N/A'}</div>`;
+        html += '</div></div>';
+
+      } else if (data.type === 'project') {
+        html += '<div class="enriched-section">';
+        html += '<h4>📁 Project Information</h4>';
+        html += '<div class="enriched-grid">';
+        html += `<div class="enriched-label">Name:</div><div class="enriched-value">${data.project.name || 'N/A'}</div>`;
+        html += `<div class="enriched-label">Workspace:</div><div class="enriched-value">${data.workspace.name || 'N/A'}</div>`;
+        html += `<div class="enriched-label">Archived:</div><div class="enriched-value">${data.project.archived ? '✅ Yes' : '❌ No'}</div>`;
+        if (data.project.owner_name) {
+          html += `<div class="enriched-label">Owner:</div><div class="enriched-value">${data.project.owner_name}</div>`;
+        }
+        if (data.project.team_name) {
+          html += `<div class="enriched-label">Team:</div><div class="enriched-value">${data.project.team_name}</div>`;
+        }
+        html += `<div class="enriched-label">Tasks:</div><div class="enriched-value">${data.stats.task_count || 0}</div>`;
+        html += `<div class="enriched-label">Customers:</div><div class="enriched-value">${data.stats.customer_count || 0}</div>`;
+        html += '</div></div>';
+
+      } else if (data.type === 'workspace') {
+        html += '<div class="enriched-section">';
+        html += '<h4>🏢 Workspace Information</h4>';
+        html += '<div class="enriched-grid">';
+        html += `<div class="enriched-label">Name:</div><div class="enriched-value">${data.workspace.name || 'N/A'}</div>`;
+        html += `<div class="enriched-label">Organization:</div><div class="enriched-value">${data.workspace.is_organization ? '✅ Yes' : '❌ No'}</div>`;
+        html += '</div></div>';
+      }
+      
+      html += '</div>';
+      return html;
+    }
+
+    function formatCurrency(amount) {
+      return new Intl.NumberFormat('vi-VN', {
+        style: 'currency',
+        currency: 'VND'
+      }).format(amount);
+    }
+
+    function updatePaginationEnriched(eventsCount, pageSize, total, hasMore) {
+      const pagination = document.getElementById('paginationEnriched');
+      const pageStart = document.getElementById('pageStartEnriched');
+      const pageEnd = document.getElementById('pageEndEnriched');
+      const btnPrev = document.getElementById('btnPrevEnriched');
+      const btnNext = document.getElementById('btnNextEnriched');
+
+      if (eventsCount === 0) {
+        pagination.style.display = 'none';
+        return;
+      }
+
+      pagination.style.display = 'flex';
+      
+      const start = currentPageEnriched * pageSize + 1;
+      const end = start + eventsCount - 1;
+      
+      pageStart.textContent = start;
+      pageEnd.textContent = end;
+      document.getElementById('totalEnrichedEvents').textContent = total || (end + (hasMore ? '+' : ''));
+
+      btnPrev.disabled = currentPageEnriched === 0;
+      btnNext.disabled = !hasMore;
+    }
+
+    function previousPageEnriched() {
+      if (currentPageEnriched > 0) {
+        currentPageEnriched--;
+        loadEnrichedEvents();
+      }
+    }
+
+    function nextPageEnriched() {
+      currentPageEnriched++;
+      loadEnrichedEvents();
     }
   </script>
 </body>

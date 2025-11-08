@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const db = require('./db');
+const dctClient = require('./dct-client');
 
 const app = express();
 const PORT = process.env.PORT || 3500;
@@ -209,6 +210,160 @@ app.get('/api/database/stats', async (req, res) => {
         ...stats,
         ...eventStats
       }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ============================================
+// DCT ENRICHMENT ENDPOINTS
+// ============================================
+
+// Test DCT database connection
+app.get('/api/dct/test', async (req, res) => {
+  try {
+    const result = await dctClient.testDCTConnection();
+    
+    res.json({
+      success: result.success,
+      message: result.success ? 'DCT database connection successful' : 'DCT database connection failed',
+      time: result.time,
+      database: result.database,
+      error: result.error
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get DCT stats
+app.get('/api/dct/stats', async (req, res) => {
+  try {
+    const stats = await dctClient.getDCTStats();
+    
+    res.json({
+      success: true,
+      stats: stats
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Enrich a single event by event ID
+app.get('/api/events/:eventId/enrich', async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.eventId);
+    
+    // Get event from database
+    const events = await db.pool.query('SELECT * FROM webhook_events WHERE id = $1', [eventId]);
+    
+    if (events.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Event not found'
+      });
+    }
+    
+    const event = events.rows[0];
+    
+    // Parse payload if string
+    let payload = event.payload;
+    if (typeof payload === 'string') {
+      payload = JSON.parse(payload);
+    }
+    
+    // Enrich the event
+    const enriched = await dctClient.enrichEvent(payload);
+    
+    res.json({
+      success: true,
+      event: {
+        id: event.id,
+        event_type: event.event_type,
+        action: event.action,
+        resource_gid: event.resource_gid,
+        resource_type: event.resource_type,
+        received_at: event.received_at,
+        signature_verified: event.signature_verified
+      },
+      enrichment: enriched.enrichment
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get enriched events from database
+app.get('/api/events/enriched', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const resourceType = req.query.resource_type || null;
+    const action = req.query.action || null;
+    
+    const events = await db.getRecentEvents(limit, offset, {
+      resourceType,
+      action
+    });
+    
+    // Enrich all events
+    const enrichedEvents = [];
+    
+    for (const event of events) {
+      let payload = event.payload;
+      if (typeof payload === 'string') {
+        try {
+          payload = JSON.parse(payload);
+        } catch (e) {
+          payload = event.payload;
+        }
+      }
+      
+      const enriched = await dctClient.enrichEvent(payload);
+      
+      enrichedEvents.push({
+        id: event.id,
+        event_type: event.event_type,
+        action: event.action,
+        resource_gid: event.resource_gid,
+        resource_type: event.resource_type,
+        user_gid: event.user_gid,
+        created_at: event.created_at,
+        received_at: event.received_at,
+        signature_verified: event.signature_verified,
+        enrichment: enriched.enrichment,
+        original_payload: payload
+      });
+    }
+    
+    // Get total count
+    const totalCount = await db.getTotalEventCount({
+      resourceType,
+      action
+    });
+    
+    res.json({
+      success: true,
+      events: enrichedEvents,
+      count: enrichedEvents.length,
+      total: totalCount,
+      limit: limit,
+      offset: offset,
+      hasMore: (offset + enrichedEvents.length) < totalCount
     });
   } catch (error) {
     res.status(500).json({
