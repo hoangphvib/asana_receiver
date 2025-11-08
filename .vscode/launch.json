@@ -8,7 +8,7 @@
       "skipFiles": [
         "<node_internals>/**"
       ],
-      "program": "${workspaceFolder}/server.js",
+      "program": "${workspaceFolder}/src/server.js",
       "preLaunchTask": "Kill Port 3500",
       "env": {
         "PORT": "3500",
